@@ -1,10 +1,10 @@
 import "dotenv/config";
 import "colors";
+import Table from "cli-table";
 import axios from "axios";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
-import Table from "cli-table";
 
 const SPLITWISE_API_URL = "https://secure.splitwise.com/api/v3.0";
 const SPLITWISE_PAGE_SIZE = 3000;
@@ -77,10 +77,10 @@ async function getExpenses(fetch = false) {
   return JSON.parse(expenses);
 }
 
-function format(number) {
+function format(number, currency = "EUR") {
   return new Intl.NumberFormat("nl-NL", {
-    style: "currency",
-    currency: "EUR",
+    style: currency ? "currency" : undefined,
+    currency: currency || undefined,
   }).format(number);
 }
 
@@ -89,6 +89,7 @@ async function run(fetch = false) {
   const groups = await getGroups(fetch);
   const expenses = await getExpenses(fetch);
 
+  let count = 0;
   let total = 0;
   let paid = 0;
   let owed = 0;
@@ -100,6 +101,7 @@ async function run(fetch = false) {
       total: (group?.total || 0) + parseFloat(expense.cost),
     });
 
+    count++;
     total += parseFloat(expense.cost);
 
     expense.users.forEach((user) => {
@@ -108,6 +110,7 @@ async function run(fetch = false) {
       }
 
       Object.assign(group, {
+        count: (group?.count || 0) + 1,
         owed: (group?.owed || 0) + parseFloat(user.owed_share),
         paid: (group?.paid || 0) + parseFloat(user.paid_share),
       });
@@ -118,20 +121,27 @@ async function run(fetch = false) {
   });
 
   const table = new Table({
-    head: ["Groep".red, "Verschuldigd".red, "Betaald".red, "Totaal".red],
-    colAligns: ["left", "right", "right", "right"],
+    head: ["Groep".red, "Aantal".red, "Verschuldigd".red, "Betaald".red, "Totaal".red],
+    colAligns: ["left", "right", "right", "right", "right"],
   });
 
   table.push([
     "Geen groep gevonden".yellow,
+    format(noGroup?.count || 0, null),
     format(noGroup?.owed || 0),
     format(noGroup?.paid || 0),
     format(noGroup?.total || 0).blue,
   ]);
   groups.forEach((group) => {
-    table.push([group.name.green, format(group?.owed || 0), format(group?.paid || 0), format(group?.total || 0).blue]);
+    table.push([
+      group.name.green,
+      format(group?.count || 0, null),
+      format(group?.owed || 0),
+      format(group?.paid || 0),
+      format(group?.total || 0).blue,
+    ]);
   });
-  table.push(["Totaal".red, format(owed).red, format(paid).red, format(total).red]);
+  table.push(["Totaal".red, format(count, null).red, format(owed).red, format(paid).red, format(total).red]);
 
   console.log(table.toString());
 }
