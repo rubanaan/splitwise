@@ -1,11 +1,37 @@
 import "dotenv/config";
+import "colors";
 import axios from "axios";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
+import Table from "cli-table";
 
 const SPLITWISE_API_URL = "https://secure.splitwise.com/api/v3.0";
 const SPLITWISE_PAGE_SIZE = 3000;
+
+async function fetchGroups() {
+  const { data } = await axios.get(`${SPLITWISE_API_URL}/get_groups`, {
+    params: {
+      limit: SPLITWISE_PAGE_SIZE,
+    },
+    headers: { Authorization: `Bearer ${process.env.SPLITWISE_API_KEY}` },
+  });
+
+  return data.groups;
+}
+
+async function getGroups(fetch = false) {
+  const cachePath = resolve(join(dirname(__dirname), "data"), "groups.json");
+
+  if (fetch || !existsSync(cachePath)) {
+    const groups = await fetchGroups();
+    await writeFile(cachePath, JSON.stringify(groups));
+    return groups;
+  }
+
+  const groups = await readFile(cachePath);
+  return JSON.parse(groups);
+}
 
 async function fetchExpenses(page = 0) {
   const { data } = await axios.get(`${SPLITWISE_API_URL}/get_expenses`, {
@@ -59,6 +85,8 @@ function format(number) {
 }
 
 async function run(fetch = false) {
+  const noGroup = {};
+  const groups = await getGroups(fetch);
   const expenses = await getExpenses(fetch);
 
   let total = 0;
@@ -66,6 +94,12 @@ async function run(fetch = false) {
   let owed = 0;
 
   expenses.forEach((expense) => {
+    let group = groups.find((group) => group.id === (expense.group_id || 0)) || noGroup;
+
+    Object.assign(group, {
+      total: (group?.total || 0) + parseFloat(expense.cost),
+    });
+
     total += parseFloat(expense.cost);
 
     expense.users.forEach((user) => {
@@ -73,14 +107,33 @@ async function run(fetch = false) {
         return;
       }
 
-      paid += parseFloat(user.paid_share);
+      Object.assign(group, {
+        owed: (group?.owed || 0) + parseFloat(user.owed_share),
+        paid: (group?.paid || 0) + parseFloat(user.paid_share),
+      });
+
       owed += parseFloat(user.owed_share);
+      paid += parseFloat(user.paid_share);
     });
   });
 
-  console.info(`Total: ${format(total)}`);
-  console.info(`Your paid share: ${format(paid)}`);
-  console.info(`Your owed share: ${format(owed)}`);
+  const table = new Table({
+    head: ["Groep".red, "Verschuldigd".red, "Betaald".red, "Totaal".red],
+    colAligns: ["left", "right", "right", "right"],
+  });
+
+  table.push([
+    "Geen groep gevonden".yellow,
+    format(noGroup?.owed || 0),
+    format(noGroup?.paid || 0),
+    format(noGroup?.total || 0).blue,
+  ]);
+  groups.forEach((group) => {
+    table.push([group.name.green, format(group?.owed || 0), format(group?.paid || 0), format(group?.total || 0).blue]);
+  });
+  table.push(["Totaal".red, format(owed).red, format(paid).red, format(total).red]);
+
+  console.log(table.toString());
 }
 
 run();
