@@ -89,12 +89,21 @@ async function run(fetch = false) {
   const groups = await getGroups(fetch);
   const expenses = await getExpenses(fetch);
 
+  let payments = 0;
   let count = 0;
   let total = 0;
   let paid = 0;
   let owed = 0;
 
   expenses.forEach((expense) => {
+    if (expense.currency_code !== "EUR") {
+      return;
+    }
+    if (expense.payment === true) {
+      payments += parseFloat(expense.cost);
+      return;
+    }
+
     let group = groups.find((group) => group.id === (expense.group_id || 0)) || noGroup;
 
     Object.assign(group, {
@@ -141,7 +150,9 @@ async function run(fetch = false) {
       format(group?.total || 0).blue,
     ]);
   });
-  table.push(["Totaal".red, format(count, null).red, format(owed).red, format(paid).red, format(total).red]);
+  table.push(["Subtotaal".red, format(count, null).red, format(owed).red, format(paid).red, format(total).red]);
+  table.push(["Betalingen".red, "-", "-", "-", format(payments).red]);
+  table.push(["Totaal".red, "-", "-", "-", format(total + payments).red]);
 
   console.log(table.toString());
 }
