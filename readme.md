@@ -17,5 +17,5 @@
 ## Commands
 
 ```bash
-yarn start
+yarn start [--fetch]
 ```

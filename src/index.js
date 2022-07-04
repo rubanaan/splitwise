@@ -146,4 +146,4 @@ async function run(fetch = false) {
   console.log(table.toString());
 }
 
-run();
+run(process.argv.indexOf("--fetch") > -1);
